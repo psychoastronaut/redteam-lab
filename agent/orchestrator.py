@@ -142,7 +142,7 @@ def main() -> None:
         except requests.RequestException as e:
             print(f"\n[erro ao falar com o Ollama, mesmo apos retentativa com historico comprimido] {e}")
             print("[encerrando sessao do planner]")
-            break
+            return
         msg = response.get("message", {})
         content = msg.get("content", "")
         tool_calls = msg.get("tool_calls") or []
@@ -152,7 +152,7 @@ def main() -> None:
 
         if not tool_calls:
             print("[planner nao chamou ferramenta -- encerrando]")
-            break
+            return
 
         stop = False
         for call in tool_calls:

@@ -6,6 +6,10 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_KEEP_ALIVE=30m
+    ports:
+      # so localhost -- deixa o opencode (e qualquer coisa no host) falar
+      # com o Ollama do lab sem expor a API pra fora da maquina
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-models:/root/.ollama
     networks: [redteam-net]

@@ -20,8 +20,10 @@ redteam-ollama):
    mais que isso sem motivo: a GPU e uma RTX 3060 de 12GB com dois
    modelos de 7B residentes (~9,4GB juntos) -- cada 1k de contexto
    extra custa VRAM de KV cache multiplicada pelos modelos carregados
-   (OLLAMA_KEEP_ALIVE=30m mantem varios residentes ao mesmo tempo), e
-   8192 e o valor que cobre o caso real sem arriscar OOM.
+   (OLLAMA_KEEP_ALIVE=30m ajuda varios ficarem residentes ao mesmo
+   tempo, mas nao garante isso sob pressao de memoria -- o Ollama pode
+   descarregar um modelo mais cedo se precisar de VRAM), e 8192 e o
+   valor que cobre o caso real sem arriscar OOM.
 
 2. Mesmo com num_ctx maior, uma sessao longa o bastante ainda pode
    estourar o contexto (ou a chamada pode falhar por outro motivo
@@ -39,25 +41,73 @@ import requests
 
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "8192"))
 
-# quantas mensagens recentes (assistant/tool/user, alem do system e da
-# primeira mensagem de usuario) mantemos ao comprimir o historico numa
-# retentativa -- cobre as ultimas 2-3 trocas assistant/tool.
-KEEP_RECENT_MESSAGES = 6
+# quantos TURNOS completos recentes mantemos ao comprimir o historico
+# numa retentativa. Um turno e uma mensagem assistant + todas as
+# mensagens que vieram depois dela (tool results, o aviso de "voce so
+# narrou" que worker.py injeta como role=user, etc) ate o proximo
+# assistant -- cobre aproximadamente as ultimas 2-3 trocas.
+KEEP_RECENT_TURNS = 3
+
+
+def _split_into_turns(rest: list[dict]) -> list[list[dict]]:
+    """Agrupa uma lista de mensagens (sem o head) em turnos completos.
+    Um turno comeca numa mensagem role=assistant e inclui todas as
+    mensagens seguintes (role=tool, ou o aviso extra role=user que
+    worker.py injeta quando o modelo so narra sem chamar ferramenta)
+    ate a proxima mensagem assistant.
+
+    Isso existe porque o padrao de mensagens NAO e estritamente
+    alternado assistant/tool: worker.py intercala um aviso role=user
+    fora de ordem, e um assistant pode ter varios tool_calls em
+    paralelo (varias mensagens role=tool seguidas). Cortar por
+    contagem fixa de mensagens pode deixar uma mensagem role=tool
+    orfa (sem o assistant com o tool_call correspondente antes dela)
+    no inicio do trecho mantido -- agrupar por turno evita isso."""
+    turns: list[list[dict]] = []
+    current: list[dict] = []
+    for m in rest:
+        if m.get("role") == "assistant":
+            if current:
+                turns.append(current)
+            current = [m]
+        else:
+            # mensagem de continuacao do turno atual (tool result, aviso
+            # de narracao etc). Se vier antes de qualquer assistant (nao
+            # deveria acontecer na pratica), fica num turno "orfao"
+            # proprio -- ele sempre sera o mais antigo, entao e o primeiro
+            # a ser descartado quando ha compressao real.
+            current.append(m)
+    if current:
+        turns.append(current)
+    return turns
 
 
 def compress_history(messages: list[dict]) -> list[dict]:
     """Mantem a mensagem de sistema (messages[0]) + a mensagem inicial
-    de usuario (messages[1]) + as ultimas KEEP_RECENT_MESSAGES
-    mensagens, descartando tudo no meio. So e usado na retentativa
+    de usuario (messages[1]) + os ultimos KEEP_RECENT_TURNS turnos
+    completos, descartando tudo no meio. So e usado na retentativa
     apos uma falha de chamada ao Ollama, pra nao bater no mesmo
-    overflow de contexto de novo."""
+    overflow de contexto de novo.
+
+    Corta por TURNO (assistant + tool results/avisos seguintes), nunca
+    por contagem bruta de mensagens, pra garantir que o trecho mantido
+    sempre comeca com um assistant -- nunca com uma mensagem role=tool
+    orfa, sem o tool_call correspondente antes dela."""
     head_size = 2  # system + primeira mensagem de usuario
-    if len(messages) <= head_size + KEEP_RECENT_MESSAGES:
-        return messages  # historico ja curto, nada pra comprimir
+    if len(messages) <= head_size:
+        return messages
 
     head = messages[:head_size]
-    tail = messages[-KEEP_RECENT_MESSAGES:]
-    discarded = len(messages) - len(head) - len(tail)
+    rest = messages[head_size:]
+    turns = _split_into_turns(rest)
+
+    if len(turns) <= KEEP_RECENT_TURNS:
+        return messages  # historico ja curto, nada pra comprimir
+
+    kept_turns = turns[-KEEP_RECENT_TURNS:]
+    discarded_turns = turns[:-KEEP_RECENT_TURNS]
+    discarded = sum(len(t) for t in discarded_turns)
+    tail = [m for turn in kept_turns for m in turn]
 
     notice = {
         "role": "user",
