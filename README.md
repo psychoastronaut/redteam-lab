@@ -115,4 +115,5 @@ metasploit-framework`.
 ## Apoie o projeto
 
 Se o lab te ajudou, você pode me pagar um café:
-[buymeacoffee.com/rodrigomcaq](https://buymeacoffee.com/rodrigomcaq)
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/rodrigomcaq)
