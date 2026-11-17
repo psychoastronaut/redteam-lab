@@ -1,0 +1,48 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: redteam-ollama
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - OLLAMA_KEEP_ALIVE=30m
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [redteam-net]
+    restart: unless-stopped
+
+  kali:
+    build: .
+    container_name: redteam-kali
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./workspace:/workspace
+      - ./vpn:/vpn:ro
+      - ./agent:/agent
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:14b-instruct}
+      - ALLOWED_TARGET=${ALLOWED_TARGET:-10.64.0.0/12}
+      - EXEC_MODE=${EXEC_MODE:-confirm}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
+      - PLANNER_MODEL=${PLANNER_MODEL:-qwen2.5:7b-instruct}
+      - WORKER_MODEL=${WORKER_MODEL:-qwen2.5:7b-instruct}
+      - WORKER_MAX_STEPS=${WORKER_MAX_STEPS:-10}
+      - PLANNER_MAX_PHASES=${PLANNER_MAX_PHASES:-8}
+    networks: [redteam-net]
+    stdin_open: true
+    tty: true
+    depends_on: [ollama]
+    restart: unless-stopped
+
+networks:
+  redteam-net:
+    driver: bridge
+
+volumes:
+  ollama-models:

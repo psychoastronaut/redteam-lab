@@ -1,0 +1,8 @@
+vpn/*.ovpn
+vpn/*.key
+vpn/*.crt
+workspace/*
+!workspace/.gitkeep
+.env
+__pycache__/
+*.pyc
