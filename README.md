@@ -111,3 +111,8 @@ nmap, gobuster, nikto, sqlmap, hydra, john, whatweb, dirb, seclists,
 netcat, dig, curl, wget, openvpn. Metasploit não entrou (pesado e lento
 de instalar) -- se precisar, `docker exec -it redteam-kali apt install
 metasploit-framework`.
+
+## Apoie o projeto
+
+Se o lab te ajudou, você pode me pagar um café:
+[buymeacoffee.com/rodrigomcaq](https://buymeacoffee.com/rodrigomcaq)
